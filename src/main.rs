@@ -89,7 +89,11 @@ async fn lemonbar_cmd(stdout: ChildStdout) {
         .lines()
         .filter_map(|line| line.ok())
         .for_each(|line| {
-            Command::new(line).spawn().unwrap();
+            let mut args: Vec<&str> = line.split(" ").collect();
+            Command::new(args.first().unwrap())
+                .args(args.drain(1..))
+                .spawn()
+                .unwrap();
         });
 }
 
@@ -125,11 +129,14 @@ fn get_battery(battery: &mut Option<Result<Battery, battery::Error>>) -> String 
 fn get_volume() -> String {
     let mute: String = String::from_utf8(
         Command::new("pactl")
-        .args(["get-sink-mute", "0"])
-        .output().unwrap()
-        .stdout
+            .args(["get-sink-mute", "0"])
+            .output()
+            .unwrap()
+            .stdout,
     )
-    .unwrap().trim().to_string();
+    .unwrap()
+    .trim()
+    .to_string();
 
     if mute == "Mute: yes".to_string() {
         return "0%".to_string();
@@ -138,12 +145,16 @@ fn get_volume() -> String {
     let volume: String = String::from_utf8(
         Command::new("pactl")
             .args(["get-sink-volume", "0"])
-            .output().unwrap()
+            .output()
+            .unwrap()
             .stdout,
     )
     .unwrap()
     .split("/")
-    .nth(1).unwrap().trim().to_owned();
+    .nth(1)
+    .unwrap()
+    .trim()
+    .to_owned();
 
     volume
 }
@@ -198,13 +209,12 @@ fn update_bar(
     let volume_str;
     if volume == "0%".to_string() {
         volume_str = "".to_string();
-    }
-    else {
+    } else {
         volume_str = format!("{volume}");
     }
     let mut updates_str = format!("");
     if updates > 1 {
-        updates_str = format!("%{{A:paru:}}{updates}%{{A}}");
+        updates_str = format!("%{{A:kitty -e paru:}}{updates}%{{A}}");
     }
     write!(
         lemonbar_stdin,
