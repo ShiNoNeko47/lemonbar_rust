@@ -9,10 +9,11 @@ use tokio::sync::mpsc::Sender;
 
 static mut UPDATES: usize = 0;
 static mut WORKSPACES: String = String::new();
+static mut VOLUME: u8 = 0;
 static WHITE: &str = "#ffffff";
 static GRAY: &str = "#888888";
 
-async fn set_updates() {
+async fn get_updates() {
     loop {
         let updates = String::from_utf8(
             Command::new("checkupdates")
@@ -28,7 +29,7 @@ async fn set_updates() {
     }
 }
 
-fn set_workspaces(report: &String) {
+fn get_workspaces(report: &String) {
     unsafe { WORKSPACES.clear() };
     let workspaces: Vec<&str> = report.split(":").collect();
     for workspace in workspaces {
@@ -77,7 +78,7 @@ async fn bspc_subscribe(tx: Sender<()>) -> Result<(), std::io::Error> {
         reader.read_line(&mut buffer).await?;
         buffer = buffer.trim().to_string();
         // println!("{buffer}");
-        set_workspaces(&buffer);
+        get_workspaces(&buffer);
         tx.send(()).await.unwrap();
     }
 }
@@ -126,7 +127,7 @@ fn get_battery(battery: &mut Option<Result<Battery, battery::Error>>) -> String 
     format!("{}{charge}%", icon)
 }
 
-fn get_volume() -> String {
+fn get_volume() -> u8 {
     let mute: String = String::from_utf8(
         Command::new("pactl")
             .args(["get-sink-mute", "0"])
@@ -139,10 +140,10 @@ fn get_volume() -> String {
     .to_string();
 
     if mute == "Mute: yes".to_string() {
-        return "0%".to_string();
+        return 0;
     }
 
-    let volume: String = String::from_utf8(
+    let volume: u8 = String::from_utf8(
         Command::new("pactl")
             .args(["get-sink-volume", "0"])
             .output()
@@ -153,14 +154,18 @@ fn get_volume() -> String {
     .split("/")
     .nth(1)
     .unwrap()
+    .replace("%", "")
     .trim()
-    .to_owned();
+    .to_owned()
+    .parse::<u8>()
+    .unwrap();
 
     volume
 }
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
+    unsafe { VOLUME = get_volume() }
     let mut battery = battery::Manager::new().unwrap().batteries().unwrap().next();
     let mut lemonbar = Command::new("lemonbar")
         .args([
@@ -184,7 +189,7 @@ async fn main() -> Result<(), std::io::Error> {
     tokio::spawn(clock(tx.clone()));
     tokio::spawn(bspc_subscribe(tx.clone()));
     tokio::spawn(lemonbar_cmd(lemonbar_stdout));
-    tokio::spawn(set_updates());
+    tokio::spawn(get_updates());
 
     while let Some(()) = rx.recv().await {
         update_bar(&lemonbar_stdin, &mut battery);
@@ -201,21 +206,25 @@ fn update_bar(
     mut lemonbar_stdin: &ChildStdin,
     battery: &mut Option<Result<Battery, battery::Error>>,
 ) {
-    let updates;
-    unsafe { updates = UPDATES };
-    let workspaces;
-    unsafe { workspaces = &WORKSPACES };
-    let volume = get_volume();
+    let volume;
+    unsafe { volume = VOLUME };
     let volume_str;
-    if volume == "0%".to_string() {
+    if volume == 0 {
         volume_str = "".to_string();
     } else {
-        volume_str = format!("{volume}");
+        volume_str = format!("{volume}%");
     }
+
+    let updates;
+    unsafe { updates = UPDATES };
     let mut updates_str = format!("");
     if updates > 1 {
         updates_str = format!("%{{A:kitty -e paru:}}{updates}%{{A}}");
     }
+
+    let workspaces;
+    unsafe { workspaces = &WORKSPACES };
+
     write!(
         lemonbar_stdin,
         "%{{F{WHITE}}}%{{T2}}{}  {volume_str}  {updates_str}  %{{T1}}%{{c}}{workspaces} %{{F{WHITE}}}%{{T2}}%{{r}}{}",
