@@ -1,10 +1,11 @@
 use battery::units::ratio::part_per_hundred;
 use battery::Battery;
 use chrono::Local;
-use std::io::{prelude::*, BufReader};
+use std::io::{self, prelude::*, BufReader};
 use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use std::time::Duration;
-use tokio::io::AsyncBufReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+use tokio::net::TcpListener;
 use tokio::sync::mpsc::Sender;
 
 static mut UPDATES: usize = 0;
@@ -163,6 +164,25 @@ fn get_volume() -> u8 {
     volume
 }
 
+async fn listen_tcp(tx: Sender<()>) -> io::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:8080").await?;
+
+    let mut buf;
+
+    loop {
+        buf = [0; 1];
+        let (mut socket, _) = listener.accept().await?;
+        socket.read(&mut buf).await?;
+        match buf.first() {
+            Some(vol) => {
+                unsafe { VOLUME = vol.to_owned() };
+                tx.send(()).await.unwrap()
+            }
+            None => {}
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
     unsafe { VOLUME = get_volume() }
@@ -190,6 +210,7 @@ async fn main() -> Result<(), std::io::Error> {
     tokio::spawn(bspc_subscribe(tx.clone()));
     tokio::spawn(lemonbar_cmd(lemonbar_stdout));
     tokio::spawn(get_updates());
+    tokio::spawn(listen_tcp(tx.clone()));
 
     while let Some(()) = rx.recv().await {
         update_bar(&lemonbar_stdin, &mut battery);
