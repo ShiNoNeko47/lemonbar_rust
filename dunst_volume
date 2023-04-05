@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Put this file on path
+
+msgTag="myvolume"
+
+volume="$(pactl get-sink-volume 0 | awk '{print $5}')"
+mute="$(pactl get-sink-mute 0 | awk '{print $2}')"
+
+if [[ $volume == 0 || "$mute" == "yes" ]]; then
+    dunstify -a "changeVolume" -u low -i audio-volume-muted -h string:x-dunst-stack-tag:$msgTag "Volume muted" 
+	printf "\x$(printf %x 0)" | nc localhost $LEMONBAR_PORT
+else
+    dunstify -a "changeVolume" -u low -i audio-volume-high -h string:x-dunst-stack-tag:$msgTag "Volume: ${volume}" -h int:value:"$volume" 
+	printf "\x$(printf %x ${volume::-1})" | nc localhost $LEMONBAR_PORT
+fi

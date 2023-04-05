@@ -91,7 +91,7 @@ async fn lemonbar_cmd(stdout: ChildStdout) {
         .lines()
         .filter_map(|line| line.ok())
         .for_each(|line| {
-            let mut args: Vec<&str> = line.split(" ").collect();
+            let mut args: Vec<&str> = line.split("\\").collect();
             Command::new(args.first().unwrap())
                 .args(args.drain(1..))
                 .spawn()
@@ -170,7 +170,7 @@ async fn listen_tcp(tx: Sender<()>) -> io::Result<()> {
     let mut buf;
 
     loop {
-        buf = [0; 1];
+        buf = [0];
         let (mut socket, _) = listener.accept().await?;
         socket.read(&mut buf).await?;
         match buf.first() {
@@ -231,16 +231,17 @@ fn update_bar(
     unsafe { volume = VOLUME };
     let volume_str;
     if volume == 0 {
-        volume_str = "".to_string();
+        volume_str = format!("%{{A:sh\\-c\\pactl set-sink-mute 0 toggle; dunst_volume:}}%{{A}}");
     } else {
-        volume_str = format!("{volume}%");
+        volume_str =
+            format!("%{{A:sh\\-c\\pactl set-sink-mute 0 toggle; dunst_volume:}}{volume}%%%{{A}}");
     }
 
     let updates;
     unsafe { updates = UPDATES };
     let mut updates_str = format!("");
     if updates > 1 {
-        updates_str = format!("%{{A:kitty -e paru:}}{updates}%{{A}}");
+        updates_str = format!("%{{A:kitty\\-e\\paru:}}{updates}%{{A}}");
     }
 
     let workspaces;
